@@ -3,5 +3,5 @@ A electronic load based on arduino and i2c analogue front end. With toolts to me
 
 
 The documentation of the project is hosted here: 
-[https://hackaday.io/project/169540-electronic-load]
+https://hackaday.io/project/169540-electronic-load
 

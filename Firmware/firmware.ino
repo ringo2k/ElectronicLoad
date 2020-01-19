@@ -46,6 +46,7 @@ typedef struct displayData_
 
   int fanSpeed;
   unsigned int dacValue;
+  unsigned int milliAmpsStepPerTick;
   float dacVoltage;
   float setCurrent;
   float inputVoltage;
@@ -172,6 +173,9 @@ String addCharToString(String input, int size, char c)
   }
 
 }
+
+uint8_t lastEncoderState = LOW;
+
 void setup() {
   Serial.begin(115200);
 
@@ -184,8 +188,11 @@ void setup() {
 
   // Encoder inputs
   pinMode(2,INPUT_PULLUP); //Press
-  pinMode(3,INPUT_PULLUP); // A
-  pinMode(4,INPUT_PULLUP); // B
+  pinMode(3,INPUT_PULLUP); // DT
+  pinMode(4,INPUT_PULLUP); // CLK
+  lastEncoderState = digitalRead(4);
+
+  dpData.milliAmpsStepPerTick = 1;
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
@@ -287,6 +294,7 @@ void loop() {
       String fanSpeedPercentString = addCharToString(String((int)(dpData.fanSpeed/2.55)),3,' ');
       printStringOnGLCD(0,0,String(currentString + String("mA") + voltageString+ String("V")));
       printStringOnGLCD(0,1,String(setcurrentString+ String("mA") + powerString + String("W")));
+      printStringOnGLCD(0,2,String(String("+"+addCharToString(String(dpData.milliAmpsStepPerTick),4,' ')+ String("mA"))));
       printStringOnGLCD(0,3,String(heatSinkTempString+ String("C") + String(" Speed: ") + fanSpeedPercentString + String("%")));
       display.display();
       break;
@@ -335,7 +343,6 @@ void loop() {
 
     // set dac
     //dpData.dacValue = 1000;
-    setCurrentInMilliamps(1000);
     dac.setVoltage(dpData.dacValue,false);
     dpData.dacVoltage = dpData.dacValue * (5.057/4096);
     //dpData.setCurrent = (dpData.dacVoltage * (8.2/108.2) ) / 0.1; 
@@ -362,17 +369,79 @@ void loop() {
     while(digitalRead(2) == LOW);
     dpData.encoderPress = true;
   }
-  // A
-  /*
-  pinMode(4,INPUT_PULLUP);
+  // CLK
   dpData.encoderUp = false;
+  dpData.encoderDown = false;
+
+  uint16_t debounceValue = 0;
+  uint8_t encoderClkState = digitalRead(4);
+
+  uint8_t encoderDtState = digitalRead(3);
   if (digitalRead(4) == LOW)
   {
-    dpData.encoderUp = true;
+    while(digitalRead(4) == LOW)
+    {
+      debounceValue++;
+      if (debounceValue >= 5000)
+      {
+        encoderClkState = LOW;
+        encoderDtState = digitalRead(3);
+      }
+    }
+  } else if (digitalRead(4) == HIGH)
+  {
+    while(digitalRead(4) == HIGH)
+    {
+      debounceValue++;
+      if (debounceValue >= 5000)
+      {
+        encoderClkState = HIGH;
+        encoderDtState = digitalRead(3);
+      }
+    }
   }
 
+
+
+  // on each change of CLK of Encoder
+  if ((encoderClkState != lastEncoderState))
+  {
+    if (encoderDtState == !lastEncoderState)
+    {
+      dpData.encoderUp = true;
+    } else {
+      dpData.encoderDown = true;
+    }
+
+    lastEncoderState = encoderClkState;
+
+  }
+
+  if (dpData.encoderPress)
+  {
+    dpData.milliAmpsStepPerTick += 10;
+    if (dpData.milliAmpsStepPerTick == 11)
+    {
+      dpData.milliAmpsStepPerTick = 10;
+    }
+    if (dpData.milliAmpsStepPerTick > 100)
+    {
+      dpData.milliAmpsStepPerTick = 1;
+    }
+  }
+
+
+  if (dpData.encoderUp)
+  {
+    setCurrentInMilliamps(dpData.setCurrent + dpData.milliAmpsStepPerTick);
+  }
+
+  if (dpData.encoderDown)
+  {
+    setCurrentInMilliamps(dpData.setCurrent - dpData.milliAmpsStepPerTick);
+  }
   dpData.adcExternalTemperature = digitalRead(4);
-  */
+  
 
 }
 

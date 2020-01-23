@@ -10,6 +10,9 @@
 
 #include <Adafruit_INA219.h>
 
+// KY-40 encoder
+#include <Encoder.h>
+
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -29,6 +32,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_MCP4725 dac;
 Adafruit_INA219 ina219;
 
+Encoder mainEnc(3,4);
 
 // different GLCD MENUs
 typedef enum MENUS_
@@ -174,7 +178,7 @@ String addCharToString(String input, int size, char c)
 
 }
 
-uint8_t lastEncoderState = LOW;
+int32_t lastEncoderValue = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -185,12 +189,10 @@ void setup() {
 
   // PWM FAN Output Speed
   pinMode(5,OUTPUT);
+  lastEncoderValue = mainEnc.read();
 
   // Encoder inputs
-  pinMode(2,INPUT_PULLUP); //Press
-  pinMode(3,INPUT_PULLUP); // DT
-  pinMode(4,INPUT_PULLUP); // CLK
-  lastEncoderState = digitalRead(4);
+  //pinMode(2,INPUT_PULLUP); //Press
 
   dpData.milliAmpsStepPerTick = 1;
 
@@ -348,7 +350,8 @@ void loop() {
     //dpData.setCurrent = (dpData.dacVoltage * (8.2/108.2) ) / 0.1; 
 
     // readback from INA219 
-    dpData.realCurrent = ina219.getCurrent_mA();
+    // real shunt is 100,7mOhm
+    dpData.realCurrent = ina219.getCurrent_mA() * 0.993;
     dpData.shuntVoltage = ina219.getShuntVoltage_mV();
 
     // input voltage
@@ -360,62 +363,6 @@ void loop() {
 
   }
 
-
-  // Encoder handling
-  // Push Button
-  dpData.encoderPress = false;
-  if (digitalRead(2) == LOW)
-  {
-    while(digitalRead(2) == LOW);
-    dpData.encoderPress = true;
-  }
-  // CLK
-  dpData.encoderUp = false;
-  dpData.encoderDown = false;
-
-  uint16_t debounceValue = 0;
-  uint8_t encoderClkState = digitalRead(4);
-
-  uint8_t encoderDtState = digitalRead(3);
-  if (digitalRead(4) == LOW)
-  {
-    while(digitalRead(4) == LOW)
-    {
-      debounceValue++;
-      if (debounceValue >= 5000)
-      {
-        encoderClkState = LOW;
-        encoderDtState = digitalRead(3);
-      }
-    }
-  } else if (digitalRead(4) == HIGH)
-  {
-    while(digitalRead(4) == HIGH)
-    {
-      debounceValue++;
-      if (debounceValue >= 5000)
-      {
-        encoderClkState = HIGH;
-        encoderDtState = digitalRead(3);
-      }
-    }
-  }
-
-
-
-  // on each change of CLK of Encoder
-  if ((encoderClkState != lastEncoderState))
-  {
-    if (encoderDtState == !lastEncoderState)
-    {
-      dpData.encoderUp = true;
-    } else {
-      dpData.encoderDown = true;
-    }
-
-    lastEncoderState = encoderClkState;
-
-  }
 
   if (dpData.encoderPress)
   {
@@ -430,6 +377,23 @@ void loop() {
     }
   }
 
+  /*
+    ENCODER HANDLING
+  */ 
+  dpData.encoderUp=false;
+  dpData.encoderDown=false;
+  // encoder in binary (UP DOWN)
+  if (lastEncoderValue < mainEnc.read())
+  {
+    dpData.encoderUp = true;
+    lastEncoderValue = mainEnc.read();
+  }
+
+  if (lastEncoderValue > mainEnc.read())
+  {
+    dpData.encoderDown = true;
+    lastEncoderValue = mainEnc.read();
+  }
 
   if (dpData.encoderUp)
   {
@@ -440,8 +404,6 @@ void loop() {
   {
     setCurrentInMilliamps(dpData.setCurrent - dpData.milliAmpsStepPerTick);
   }
-  dpData.adcExternalTemperature = digitalRead(4);
-  
 
 }
 
